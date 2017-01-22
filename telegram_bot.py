@@ -1,12 +1,14 @@
 from telegram.ext import MessageHandler, Filters
 from telegram.ext import CommandHandler
 from telegram.ext import Updater
-import var_dump
 import os.path
 import sys
 import time
 import logging
+
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+debug = False
 
 config_file = ".token_secret"
 my_token = None
@@ -55,7 +57,8 @@ dispatcher.add_handler(open_handler)
 def echo(bot, update):
     chat_id = update.message.chat_id
     message = update.message.text
-    print("ECHO: chat_id: {}".format(chat_id))
+    if debug:
+        logging.debug("DEBUG: echo: chat_id: {}".format(chat_id))
 
     if message.startswith("configure"):
         if chat_id in valid_uids:
@@ -64,10 +67,14 @@ def echo(bot, update):
             params = params[0]
             if len(params) > 1:
                 if params[1] == "phone":
-                    current_phone_number = valid_uids[chat_id]['phone']
-                    bot.sendMessage(chat_id=chat_id, text="Cambiado teléfono de '{}' a '{}'"
-                                    .format(current_phone_number, params[2]))
-                    valid_uids[chat_id]['phone'] = params[2]
+                    if len(params) > 2:
+                        logging.info("[{}] configured a new phone number.".format(chat_id))
+                        current_phone_number = valid_uids[chat_id]['phone']
+                        bot.sendMessage(chat_id=chat_id, text="Cambiado teléfono de '{}' a '{}'"
+                                        .format(current_phone_number, params[2]))
+                        valid_uids[chat_id]['phone'] = params[2]
+                    else:
+                        bot.sendMessage(chat_id=chat_id, text="Prueba a añadir también el número.")
                 elif params[1] == "name":
                     bot.sendMessage(chat_id=chat_id, text="No, no te dejo cambiarte el nombre. Te llamas {} y punto"
                                     .format(valid_uids[chat_id]['name']))
