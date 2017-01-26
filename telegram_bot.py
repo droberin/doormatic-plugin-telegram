@@ -5,6 +5,9 @@ import os.path
 import sys
 import time
 import logging
+from time import gmtime, strftime
+import pyotp
+import json
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -23,13 +26,17 @@ if my_token is None:
 updater = Updater(token=my_token)
 dispatcher = updater.dispatcher
 
+if os.path.isfile("config.json"):
+    valid_uids = json.load(open("config.json"))
+    print(valid_uids)
+else:
 # Testing purposes
-valid_uids = {
-    11617294: {
-        "name": "DRoBeR",
-        "phone": "+34XXXXXXXXX"
+    valid_uids = {
+        11617294: {
+            "name": "DRoBeR",
+            "phone": "+34XXXXXXXXX"
+        }
     }
-}
 
 
 def start(bot, update):
@@ -55,7 +62,9 @@ dispatcher.add_handler(open_handler)
 
 
 def echo(bot, update):
-    chat_id = update.message.chat_id
+    global valid_uids
+    chat_id = str(update.message.chat_id)
+    #chat_id_str = str(chat_id)
     message = update.message.text
     if debug:
         logging.debug("DEBUG: echo: chat_id: {}".format(chat_id))
@@ -90,6 +99,24 @@ def echo(bot, update):
         else:
             bot.sendMessage(chat_id=chat_id, text="Ya te molaba.\nHabla con el superintendente para que te dé acceso\n"
                                                   "Tu ID es: {}".format(chat_id))
+    elif message.startswith("time"):
+        showtime = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime))
+    elif message.startswith("totp"):
+        if chat_id in valid_uids:
+            if "totp_key" in valid_uids[chat_id]:
+                totp = pyotp.TOTP(valid_uids[chat_id]['totp_key'])
+                current_pass = totp.now()
+                bot.sendMessage(chat_id=chat_id, text="Current pass: {}".format(current_pass))
+            else:
+                bot.sendMessage(chat_id=chat_id, text="Don't know your key... Sorry")
+        else:
+            logging.info("Unknown user: {}".format(chat_id))
+            bot.sendMessage(chat_id=chat_id, text="Don't know you.")
+    elif message.startswith("reload"):
+        if os.path.isfile("config.json"):
+            valid_uids = json.load(open("config.json"))
+            bot.sendMessage(chat_id=chat_id, text="porquemapetece...")
     else:
         bot.sendMessage(chat_id=chat_id, text="No he entendido guay. Comienza nuevamente el proceso")
 
