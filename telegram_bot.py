@@ -109,7 +109,8 @@ def echo(bot, update):
                                                   "Tu ID es: {}".format(chat_id))
     elif message.lower().startswith("time"):
         showtime = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime))
+        test_reply = [ "test", "retest"]
+        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime), reply_markup=json.dumps(test_reply))
     elif message.lower().startswith("totp"):
         if chat_id in valid_uids:
             if "totp_key" in valid_uids[chat_id]:
