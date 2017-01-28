@@ -28,15 +28,13 @@ dispatcher = updater.dispatcher
 
 if os.path.isfile("config.json"):
     valid_uids = json.load(open("config.json"))
-    print(valid_uids)
+    if valid_uids != "":
+        logging.info("Configuration file loaded")
+        logging.debug("config data {}".format(valid_uids))
 else:
-# Testing purposes
-    valid_uids = {
-        11617294: {
-            "name": "DRoBeR",
-            "phone": "+34XXXXXXXXX"
-        }
-    }
+    # Fail if no config is found
+    logging.error("Configuration not found. You might wanna check config.json.example file.")
+    sys.exit(1)
 
 
 def start(bot, update):
@@ -64,7 +62,7 @@ dispatcher.add_handler(open_handler)
 def echo(bot, update):
     global valid_uids
     chat_id = str(update.message.chat_id)
-    #chat_id_str = str(chat_id)
+    # chat_id_str = str(chat_id)
     message = update.message.text
     if debug:
         logging.debug("DEBUG: echo: chat_id: {}".format(chat_id))
@@ -134,4 +132,5 @@ updater.start_polling()
 echo_handler = MessageHandler(Filters.text, echo)
 dispatcher.add_handler(echo_handler)
 
-time.sleep(1000)
+while True:
+    time.sleep(20)
