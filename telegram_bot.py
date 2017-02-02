@@ -28,15 +28,13 @@ dispatcher = updater.dispatcher
 
 if os.path.isfile("config.json"):
     valid_uids = json.load(open("config.json"))
-    # print(valid_uids)
+    if valid_uids != "":
+        logging.info("Configuration file loaded")
+        logging.debug("config data {}".format(valid_uids))
 else:
-# Testing purposes
-    valid_uids = {
-        11617294: {
-            "name": "DRoBeR",
-            "phone": "+34XXXXXXXXX"
-        }
-    }
+    # Fail if no config is found
+    logging.error("Configuration not found. You might wanna check config.json.example file.")
+    sys.exit(1)
 
 
 def start(bot, update):
@@ -64,12 +62,12 @@ dispatcher.add_handler(open_handler)
 def echo(bot, update):
     global valid_uids
     chat_id = str(update.message.chat_id)
-    #chat_id_str = str(chat_id)
+    # chat_id_str = str(chat_id)
     message = update.message.text
     if debug:
         logging.debug("DEBUG: echo: chat_id: {}".format(chat_id))
 
-    if message.startswith("configure"):
+    if message.lower().startswith("configure"):
         if chat_id in valid_uids:
             params = ()
             params = message.split(' '),
@@ -93,16 +91,25 @@ def echo(bot, update):
                 bot.sendMessage(chat_id=chat_id, text="Erm no idea {}".format(len(params)))
         else:
             bot.sendMessage(chat_id=chat_id, text="Que a ti ni agua.")
-    elif message.startswith("abre"):
+    elif message.lower().startswith("hi") or message.lower().startswith("hola"):
+        if chat_id in valid_uids:
+            if "name" in valid_uids[chat_id]:
+                bot.sendMessage(chat_id=chat_id, text="Hola, {}".format(valid_uids[chat_id]['name']))
+            else:
+                bot.sendMessage(chat_id=chat_id, text="Hola :)")
+        else:
+            bot.sendMessage(chat_id=chat_id, text="Hola, persona desconocida.")
+    elif message.lower().startswith("abre"):
         if chat_id in valid_uids:
             bot.sendMessage(chat_id=chat_id, text="Voy...")
         else:
             bot.sendMessage(chat_id=chat_id, text="Ya te molaba.\nHabla con el superintendente para que te dé acceso\n"
                                                   "Tu ID es: {}".format(chat_id))
-    elif message.startswith("time"):
+    elif message.lower().startswith("time"):
         showtime = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime))
-    elif message.startswith("totp"):
+        test_reply = [ "test", "retest"]
+        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime), reply_markup=json.dumps(test_reply))
+    elif message.lower().startswith("totp"):
         if chat_id in valid_uids:
             if "totp_key" in valid_uids[chat_id]:
                 totp = pyotp.TOTP(valid_uids[chat_id]['totp_key'])
@@ -113,7 +120,7 @@ def echo(bot, update):
         else:
             logging.info("Unknown user: {}".format(chat_id))
             bot.sendMessage(chat_id=chat_id, text="Don't know you.")
-    elif message.startswith("reload"):
+    elif message.lower().startswith("reload"):
         if os.path.isfile("config.json"):
             valid_uids = json.load(open("config.json"))
             bot.sendMessage(chat_id=chat_id, text="porquemapetece...")
@@ -127,5 +134,4 @@ updater.start_polling()
 echo_handler = MessageHandler(Filters.text, echo)
 dispatcher.add_handler(echo_handler)
 
-while True:
-    time.sleep(5)
+bot.idle()
