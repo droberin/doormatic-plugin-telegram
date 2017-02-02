@@ -28,7 +28,7 @@ dispatcher = updater.dispatcher
 
 if os.path.isfile("config.json"):
     valid_uids = json.load(open("config.json"))
-    print(valid_uids)
+    # print(valid_uids)
 else:
 # Testing purposes
     valid_uids = {
@@ -117,6 +117,8 @@ def echo(bot, update):
         if os.path.isfile("config.json"):
             valid_uids = json.load(open("config.json"))
             bot.sendMessage(chat_id=chat_id, text="porquemapetece...")
+    elif message.startswith("whoami"):
+        bot.sendMessage(chat_id=chat_id, text="Eres: {}".format(chat_id))
     else:
         bot.sendMessage(chat_id=chat_id, text="No he entendido guay. Comienza nuevamente el proceso")
 
@@ -125,4 +127,5 @@ updater.start_polling()
 echo_handler = MessageHandler(Filters.text, echo)
 dispatcher.add_handler(echo_handler)
 
-time.sleep(1000)
+while True:
+    time.sleep(5)
