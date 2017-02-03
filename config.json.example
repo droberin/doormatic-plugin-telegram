@@ -6,7 +6,7 @@
   },
   "22222": {
     "phone": "+346XXXXXXXX",
-    "name": "DRoBeR"
+    "name": "DRoBeR",
     "totp_key": "A_VALID_KEY_TO_GENERATE_TOKEN"
   }
 }

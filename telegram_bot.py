@@ -1,11 +1,13 @@
 from telegram.ext import MessageHandler, Filters
 from telegram.ext import CommandHandler
 from telegram.ext import Updater
-import os.path
+
+import os
 import sys
 import time
 import logging
 from time import gmtime, strftime
+import datetime
 import pyotp
 import json
 
@@ -13,33 +15,73 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 debug = False
 
-config_file = ".token_secret"
-my_token = None
-if os.path.isfile(config_file):
-    with open (config_file, "r") as my_config:
-        my_token=my_config.read(100)
+token_file = ".token_secret"
+
+my_token = os.getenv('TELEGRAM_TOKEN', None)
+
+# Check if running inside a Docker container
+if os.path.isfile("/.dockerenv"):
+    config_dir = os.getenv('TELEGRAM_CONFIG_DIR', "/app/config")
+    running_in_docker = True
+else:
+    config_dir = os.getenv('TELEGRAM_CONFIG_DIR', ".")
+    running_in_docker = False
+
 
 if my_token is None:
-    print("Couldn't find any token")
-    sys.exit(1)
+    token_file_full_path = config_dir + "/" + token_file
+    if os.path.isfile(token_file_full_path):
+        logging.debug("Token file found, trying to load it.")
+        with open (token_file, "r") as my_config:
+            my_token=my_config.read(50)
+    else:
+        logging.error("No token file found in {}".format(token_file_full_path))
+        sys.exit(1)
+else:
+    logging.info("Got token from environment")
 
-updater = Updater(token=my_token)
-dispatcher = updater.dispatcher
+try:
+    updater = Updater(token=my_token)
+    dispatcher = updater.dispatcher
+except:
+    logging.error("Token error")
+    sys.exit(2)
+finally:
+    logging.debug("End of token load process")
 
-if os.path.isfile("config.json"):
-    valid_uids = json.load(open("config.json"))
-    if valid_uids != "":
-        logging.info("Configuration file loaded")
-        logging.debug("config data {}".format(valid_uids))
+config_file_full_path = config_dir + "/config.json"
+if os.path.isfile(config_file_full_path):
+    valid_uids = json.load(open(config_file_full_path))
+    # Please, avoid this, might have passwords os suff you don't want to see
+    # logging.debug(valid_uids)
 else:
     # Fail if no config is found
-    logging.error("Configuration not found. You might wanna check config.json.example file.")
-    sys.exit(1)
+    if not running_in_docker:
+        logging.error("Configuration not found at {}".format(config_file_full_path))
+        sys.exit(1)
+    else:
+        if os.path.isfile(config_file_full_path + ".example"):
+            logging.warning("No configuration file found at {} but example is..."
+                            " loading it. FIX THIS!".format(config_file_full_path))
+            valid_uids = json.load(open(config_file_full_path + ".example"))
+        else:
+            logging.error("Configuration not found at {}".format(config_file_full_path))
+            sys.exit(1)
 
 
 def start(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text="Hola, Dragonico. Aquí me tienes. Cuéntame tus penas!")
-    print("chat_id: {}".format(update.message.chat_id))
+    bot.sendMessage(
+        chat_id=update.message.chat_id,
+        text="Hola, {}. Aquí me tienes.\n"
+             "Cuéntame tus penas!\n"
+             "\n"
+             "Empieza con un /help (TODO)\n"
+             "Algunos comandos que te gustarán\n"
+             "\tabre: abre la puerta\n"
+             "\ttotp: otorga tu código OTP para abrir\n"
+             "".format(update.message.chat.username)
+    )
+    logging.info("[START] ID {} requested a start (@{})".format(update.message.chat_id, update.message.chat.username))
 
 start_handler = CommandHandler('start', start)
 dispatcher.add_handler(start_handler)
@@ -61,11 +103,25 @@ dispatcher.add_handler(open_handler)
 
 def echo(bot, update):
     global valid_uids
+
     chat_id = str(update.message.chat_id)
-    # chat_id_str = str(chat_id)
     message = update.message.text
+    message_time = update.message.date
+    current_time = datetime.datetime.fromtimestamp(time.time())
+    diff_time = current_time - message_time
+    full_name = update.message.chat.first_name + " " + update.message.chat.last_name
+    user_name = update.message.chat.username
     if debug:
-        logging.debug("DEBUG: echo: chat_id: {}".format(chat_id))
+        logging.debug("DEBUG: echo(): chat_id: {} [@{}]".format(chat_id, user_name))
+
+    if diff_time.seconds > 10:
+        logging.warning("[IGNORED] Old message has been received from {} [{}]"
+                        "\n\tReachable through [ http://t.me/{} or tg://resolve?domain={} ]".format(
+                            chat_id,
+                            full_name,
+                            user_name,
+                            user_name))
+        return False
 
     if message.lower().startswith("configure"):
         if chat_id in valid_uids:
@@ -93,12 +149,10 @@ def echo(bot, update):
             bot.sendMessage(chat_id=chat_id, text="Que a ti ni agua.")
     elif message.lower().startswith("hi") or message.lower().startswith("hola"):
         if chat_id in valid_uids:
-            if "name" in valid_uids[chat_id]:
-                bot.sendMessage(chat_id=chat_id, text="Hola, {}".format(valid_uids[chat_id]['name']))
-            else:
-                bot.sendMessage(chat_id=chat_id, text="Hola :)")
+            bot.sendMessage(chat_id=chat_id, text="Hi, {}".format(user_name))
         else:
-            bot.sendMessage(chat_id=chat_id, text="Hola, persona desconocida.")
+            bot.sendMessage(chat_id=chat_id, text="Hola, persona desconocida que se hace llamar «{}»".format(user_name))
+
     elif message.lower().startswith("abre"):
         if chat_id in valid_uids:
             bot.sendMessage(chat_id=chat_id, text="Voy...")
@@ -107,8 +161,7 @@ def echo(bot, update):
                                                   "Tu ID es: {}".format(chat_id))
     elif message.lower().startswith("time"):
         showtime = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-        test_reply = [ "test", "retest"]
-        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime), reply_markup=json.dumps(test_reply))
+        bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime))
     elif message.lower().startswith("totp"):
         if chat_id in valid_uids:
             if "totp_key" in valid_uids[chat_id]:
@@ -121,9 +174,11 @@ def echo(bot, update):
             logging.info("Unknown user: {}".format(chat_id))
             bot.sendMessage(chat_id=chat_id, text="Don't know you.")
     elif message.lower().startswith("reload"):
-        if os.path.isfile("config.json"):
-            valid_uids = json.load(open("config.json"))
-            bot.sendMessage(chat_id=chat_id, text="porquemapetece...")
+        if os.path.isfile(config_file_full_path):
+            valid_uids = json.load(open(config_file_full_path))
+            bot.sendMessage(chat_id=chat_id, text="Loaded {}".format(config_file_full_path))
+        else:
+            bot.sendMessage(chat_id=chat_id, text="No configfile {} found".format(config_file_full_path))
     elif message.startswith("whoami"):
         bot.sendMessage(chat_id=chat_id, text="Eres: {}".format(chat_id))
     else:
@@ -134,4 +189,4 @@ updater.start_polling()
 echo_handler = MessageHandler(Filters.text, echo)
 dispatcher.add_handler(echo_handler)
 
-bot.idle()
+updater.idle()
