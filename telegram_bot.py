@@ -1,6 +1,8 @@
 from telegram.ext import MessageHandler, Filters
 from telegram.ext import CommandHandler
 from telegram.ext import Updater
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 
 import os
 import sys
@@ -10,12 +12,16 @@ from time import gmtime, strftime
 import datetime
 import pyotp
 import json
-
+from mywakeonlan import wake_on_lan
+import getopt
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 debug = False
 
 token_file = ".token_secret"
+
+token_file_full_path = None
+config_file_full_path = None
 
 my_token = os.getenv('TELEGRAM_TOKEN', None)
 
@@ -27,13 +33,41 @@ else:
     config_dir = os.getenv('TELEGRAM_CONFIG_DIR', ".")
     running_in_docker = False
 
+try:
+    opts, args = getopt.getopt(
+        sys.argv[1:],
+        "hdt:u:c:cd:",
+        ["debug","token-file=","users-file=","computers-file=","config-dir="]
+    )
+except getopt.GetoptError:
+    print(sys.argv[0] + ' -u <users_file> -c <computers_file> -t <token_file>')
+    sys.exit(2)
+
+for opt, arg in opts:
+    if opt == '-h':
+        print(sys.argv[0] + ' -u <users_file> -c <computers_file> -t <token_file>')
+        sys.exit(0)
+    elif opt in ("-d", "--debug"):
+        logging.info("Requested log level change to DEBUG.")
+        logging.getLogger().setLevel(logging.DEBUG)
+    elif opt in ("-t", "--token-file"):
+        token_file_full_path = arg
+        logging.debug("Token full path set to {}".format(token_file_full_path))
+    elif opt in ("-u", "--users-file"):
+        config_file_full_path = arg
+        logging.debug("Config file (users) full path set to {}".format(config_file_full_path))
+    elif opt in ("-cd", "--config-dir"):
+        config_dir = arg
+        logging.debug("Configuration directory set to {}".format(config_dir))
+
 
 if my_token is None:
-    token_file_full_path = config_dir + "/" + token_file
+    if not token_file_full_path:
+        token_file_full_path = config_dir + "/" + token_file
     if os.path.isfile(token_file_full_path):
         logging.debug("Token file found, trying to load it.")
         with open (token_file, "r") as my_config:
-            my_token=my_config.read(50)
+            my_token = my_config.read(50)
     else:
         logging.error("No token file found in {}".format(token_file_full_path))
         sys.exit(1)
@@ -49,7 +83,8 @@ except:
 finally:
     logging.debug("End of token load process")
 
-config_file_full_path = config_dir + "/config.json"
+if not config_file_full_path:
+    config_file_full_path = config_dir + "/config.json"
 if os.path.isfile(config_file_full_path):
     valid_uids = json.load(open(config_file_full_path))
     # Please, avoid this, might have passwords os suff you don't want to see
@@ -67,6 +102,21 @@ else:
         else:
             logging.error("Configuration not found at {}".format(config_file_full_path))
             sys.exit(1)
+
+
+computers_file_full_path = config_dir + "/config.computers.json"
+known_computers = None
+
+if os.path.isfile(computers_file_full_path):
+    if running_in_docker:
+        logging.warning(
+            "This bot is running as a Docker container,"
+            " so it might be unable to wake or reach any computer"
+        )
+    known_computers = json.load(open(computers_file_full_path))
+    logging.debug(known_computers)
+
+
 
 
 def start(bot, update):
@@ -103,16 +153,17 @@ dispatcher.add_handler(open_handler)
 
 def echo(bot, update):
     global valid_uids
+    global known_computers
 
     chat_id = str(update.message.chat_id)
     message = update.message.text
+    incoming_photos = update.message.photo
     message_time = update.message.date
     current_time = datetime.datetime.fromtimestamp(time.time())
     diff_time = current_time - message_time
     full_name = update.message.chat.first_name + " " + update.message.chat.last_name
     user_name = update.message.chat.username
-    if debug:
-        logging.debug("DEBUG: echo(): chat_id: {} [@{}]".format(chat_id, user_name))
+    logging.debug("DEBUG: echo(): chat_id: {} [@{}] [Photos: {}]".format(chat_id, user_name, len(incoming_photos)))
 
     if diff_time.seconds > 10:
         logging.warning("[IGNORED] Old message has been received from {} [{}]"
@@ -122,6 +173,8 @@ def echo(bot, update):
                             user_name,
                             user_name))
         return False
+    if len(incoming_photos) > 0:
+        logging.info("Some photos are comming!!! {}".format(len(incoming_photos)))
 
     if message.lower().startswith("configure"):
         if chat_id in valid_uids:
@@ -147,6 +200,7 @@ def echo(bot, update):
                 bot.sendMessage(chat_id=chat_id, text="Erm no idea {}".format(len(params)))
         else:
             bot.sendMessage(chat_id=chat_id, text="Que a ti ni agua.")
+
     elif message.lower().startswith("hi") or message.lower().startswith("hola"):
         if chat_id in valid_uids:
             bot.sendMessage(chat_id=chat_id, text="Hi, {}".format(user_name))
@@ -162,6 +216,7 @@ def echo(bot, update):
     elif message.lower().startswith("time"):
         showtime = strftime("%Y-%m-%d %H:%M:%S", gmtime())
         bot.sendMessage(chat_id=chat_id, text="GMT: {}".format(showtime))
+
     elif message.lower().startswith("totp"):
         if chat_id in valid_uids:
             if "totp_key" in valid_uids[chat_id]:
@@ -173,12 +228,50 @@ def echo(bot, update):
         else:
             logging.info("Unknown user: {}".format(chat_id))
             bot.sendMessage(chat_id=chat_id, text="Don't know you.")
+
     elif message.lower().startswith("reload"):
+        return_message = None
         if os.path.isfile(config_file_full_path):
             valid_uids = json.load(open(config_file_full_path))
-            bot.sendMessage(chat_id=chat_id, text="Loaded {}".format(config_file_full_path))
+            return_message += "[Users]: Loaded {}\n".format(config_file_full_path)
         else:
-            bot.sendMessage(chat_id=chat_id, text="No configfile {} found".format(config_file_full_path))
+            return_message += "No configfile {} found\n".format(config_file_full_path)
+
+        if os.path.isfile(computers_file_full_path):
+            known_computers = json.load(open(computers_file_full_path))
+            return_message += "[Computers]: Loaded {}\n".format(computers_file_full_path)
+        else:
+            return_message += "No computersfile {} found\n".format(computers_file_full_path)
+        bot.sendMessage(chat_id=chat_id, text=return_message)
+
+    elif message.lower().startswith("wol") or message.lower().startswith("wake"):
+        if chat_id in valid_uids:
+            params = message.split(' '),
+            params = params[0]
+            if len(params) > 1:
+                if params[1]:
+                    computer = params[1]
+                    if computer in known_computers:
+                        if "mac" in known_computers[computer]:
+                            mac_address = known_computers[computer]['mac']
+                            logging.info("Waking up computer {} [{}]".format(computer, mac_address))
+                            bot.sendMessage(chat_id=chat_id, text="Machine '{}' found. "
+                                                                  "Requesting Wake On Lan".format(computer))
+                            try:
+                                wake_on_lan(mac_address)
+                            finally:
+                                pass
+                        else:
+                            bot.sendMessage(chat_id=chat_id, text="Machine found but no 'mac' address found, sorry")
+                    else:
+                        bot.sendMessage(chat_id=chat_id, text="Machine not found in list")
+                else:
+                    bot.sendMessage(chat_id=chat_id, text="¿Qué máquina?")
+            else:
+                bot.sendMessage(chat_id=chat_id, text="Erm no idea [{}]".format(len(params)))
+        else:
+            logging.info("[WOL] Unknown user: {} [@{} ]".format(chat_id, user_name))
+            bot.sendMessage(chat_id=chat_id, text="Don't know you.")
     elif message.startswith("whoami"):
         bot.sendMessage(chat_id=chat_id, text="Eres: {}".format(chat_id))
     else:
