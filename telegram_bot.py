@@ -115,8 +115,18 @@ if os.path.isfile(computers_file_full_path):
         )
     known_computers = json.load(open(computers_file_full_path))
     logging.debug(known_computers)
-
-
+else:
+    if not running_in_docker:
+        logging.error("Computers configuration not found at {}".format(computers_file_full_path))
+        sys.exit(1)
+    else:
+        if os.path.isfile(computers_file_full_path + ".example"):
+            logging.info("No computer configuration file found at {} but example is..."
+                         "loading it. FIX THIS!".format(computers_file_full_path + ".example"))
+            valid_uids = json.load(open(computers_file_full_path + ".example"))
+        else:
+            logging.error("Computer Configuration not found at {}".format(computers_file_full_path))
+            sys.exit(1)
 
 
 def start(bot, update):
