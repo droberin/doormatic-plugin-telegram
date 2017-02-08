@@ -90,5 +90,9 @@ ENV/
 .ropeproject
 .idea/
 
+# Configuration files
 config.json
+config.computers.json
+
+# Backup files
 *~
