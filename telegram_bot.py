@@ -36,8 +36,8 @@ else:
 try:
     opts, args = getopt.getopt(
         sys.argv[1:],
-        "hdt:u:c:cd:",
-        ["debug","token-file=","users-file=","computers-file=","config-dir="]
+        "hdt:u:c:",
+        ["debug","token-file=","users-file=","computers-file=","config-dir=","cd="]
     )
 except getopt.GetoptError:
     print(sys.argv[0] + ' -u <users_file> -c <computers_file> -t <token_file>')
@@ -56,7 +56,7 @@ for opt, arg in opts:
     elif opt in ("-u", "--users-file"):
         config_file_full_path = arg
         logging.debug("Config file (users) full path set to {}".format(config_file_full_path))
-    elif opt in ("-cd", "--config-dir"):
+    elif opt in ("--cd", "--config-dir"):
         config_dir = arg
         logging.debug("Configuration directory set to {}".format(config_dir))
 
@@ -67,7 +67,7 @@ if my_token is None:
     if os.path.isfile(token_file_full_path):
         logging.debug("Token file found, trying to load it.")
         with open (token_file, "r") as my_config:
-            my_token = my_config.read(50)
+            my_token = my_config.read(50).rstrip(os.linesep)
     else:
         logging.error("No token file found in {}".format(token_file_full_path))
         sys.exit(1)
